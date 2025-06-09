@@ -56,6 +56,31 @@ async def message(request: Request, From: str = Form(...), Body: str = Form(...)
     return Response(content=str(out_response), media_type="application/xml")
 
 
+@app.post("/sms/v1")
+async def message(request: Request, From: str = Form(...), Body: str = Form(...)):
+    """Send a dynamic reply to an incoming text message"""
+
+    out_response = MessagingResponse()
+
+    # Get response from AI
+    conv_history = []
+    payload = {
+        "question": Body,
+        "user_id": From,
+        "conversation_history": conv_history,
+        "channel": "sms",
+    }
+    try:
+        ai_response = requests.post(f"{VOTERLINK_URL}/chat/{BRAND}", json=payload)
+        ai_response_data = ai_response.json()
+        out_msg = ai_response_data["response"]
+    except Exception as exc:
+        logger.error(f"Error in getting response from AI backend: {str(exc)}")
+        out_msg = "Sorry, I am unable to process your request at the moment."
+
+    out_response.message(out_msg)
+    return Response(content=str(out_response), media_type="application/xml")
+
 @app.get("/")
 async def root():
     return {"message": "hello world"}
