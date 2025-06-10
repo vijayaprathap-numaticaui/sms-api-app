@@ -15,7 +15,10 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 VOTERLINK_URL = os.getenv(
     "BACKEND_URL", "https://backend-voterlink-hxe8d7axbhdugxen.westus2-01.azurewebsites.net"
 )
+
+VOTERLINK_URL_V1 = 'http://74.179.100.214'
 BRAND = os.getenv("BRAND", "fullerton-mayor")
+BRAND_V1 = os.getenv("BRAND", "fredjung")
 CONVERSATIONS = {}
 
 app = FastAPI()
@@ -71,7 +74,7 @@ async def message(request: Request, From: str = Form(...), Body: str = Form(...)
         "channel": "sms",
     }
     try:
-        ai_response = requests.post(f"{VOTERLINK_URL}/chat/{BRAND}", json=payload)
+        ai_response = requests.post(f"{VOTERLINK_URL_V1}/chat/{BRAND_V1}", json=payload)
         ai_response_data = ai_response.json()
         out_msg = ai_response_data["response"]
     except Exception as exc:
