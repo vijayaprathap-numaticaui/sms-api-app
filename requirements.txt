@@ -1,5 +1,9 @@
 fastapi
 uvicorn[standard]
+python-multipart
 requests
 twilio
-python-multipart
+python-dotenv
+motor
+pymongo
+bson
