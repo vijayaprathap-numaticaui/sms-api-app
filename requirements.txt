@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-python-multipart
-requests
-twilio
-python-dotenv
-motor
-pymongo
-bson
