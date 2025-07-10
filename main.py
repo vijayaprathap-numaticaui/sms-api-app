@@ -198,7 +198,7 @@ async def receive_sms(brand: str = Path(...), From: str = Form(...), Body: str =
     }
 
     try:
-        ai_response = requests.post(f"{config['ai_url']}/chat/{brand}", json=payload)
+        ai_response = requests.post(f"{config['ai_url']}/chat/{brand}", json=payload, verify=False)
         ai_data = ai_response.json()
         reply = ai_data.get("response", "No reply.")
         await store_sms_interaction(From, session_id, Body, reply, brand)
