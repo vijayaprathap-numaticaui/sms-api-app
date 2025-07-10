@@ -71,8 +71,8 @@ def format_for_sms(html: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
-def get_brand_collection(brand: str):
-    return db[f"sms_chat_sessions_{brand.lower()}"]
+def get_brand_collection():
+    return db["sms_chat_sessions"]
 
 async def update_delivered_status(campaign_id: str, contact_id: str):
     try:
@@ -109,8 +109,8 @@ async def update_delivered_status(campaign_id: str, contact_id: str):
         logger.error(f"Error updating Directus: {e}")
 
 async def get_or_create_sms_session(user_id: str, brand: str):
-    collection = get_brand_collection(brand)
-    session = await collection.find_one({"user_id": user_id})
+    collection = get_brand_collection()
+    session = await collection.find_one({"user_id": user_id, "brand": brand})
     if session:
         return str(session["_id"])
     new_session = {
@@ -123,7 +123,7 @@ async def get_or_create_sms_session(user_id: str, brand: str):
     return str(result.inserted_id)
 
 async def store_sms_interaction(user_id: str, session_id: str, message: str, reply: str, brand: str, channel: str = "sms"):
-    collection = get_brand_collection(brand)
+    collection = get_brand_collection()
     interaction_user = {
         "type": "user",
         "message": message,
@@ -212,8 +212,8 @@ async def receive_sms(brand: str = Path(...), From: str = Form(...), Body: str =
 
 @app.get("/messages/{phone}/{brand}")
 async def get_messages(phone: str, brand: str):
-    collection = get_brand_collection(brand)
-    sessions = await collection.find({"user_id": phone}).sort("last_updated", -1).to_list(length=1)
+    collection = get_brand_collection()
+    sessions = await collection.find({"user_id": phone, "brand": brand}).sort("last_updated", -1).to_list(length=1)
     if not sessions:
         return {"success": True, "messages": []}
     return {"success": True, "messages": sessions[0].get("interactions", [])}
