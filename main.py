@@ -32,7 +32,7 @@ db = mongo_client["voterlink"]
 sms_sessions_collection = db["sms_chat_sessions"]
 
 BRAND_CONFIG = {
-    "fullerton": {
+    "fullerton-mayor": {
         "twilio_number": os.getenv("FULLERTON_TWILIO_PHONE"),
         "ai_url": os.getenv("FULLERTON_AI_URL"),
     },
