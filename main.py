@@ -61,7 +61,7 @@ class SMSRequest(BaseModel):
     brand: str
 
 def format_for_sms(html: str) -> str:
-    text = re.sub(r"<p>(?:&nbsp;|\s| )*</p>", "\n", html)
+    text = re.sub(r"<p>(?:&nbsp;|\s| )*</p>", "\n", html)
     text = re.sub(r"<p[^>]*>", "", text)
     text = re.sub(r"</p>", "\n", text)
     text = re.sub(r"<br\s*/?>", "\n", text)
@@ -146,6 +146,34 @@ async def store_sms_interaction(user_id: str, session_id: str, message: str, rep
         }
     )
 
+async def store_campaign_message(user_id: str, message: str, brand: str, campaign_id: str, contact_id: str, channel: str = "sms"):
+    """Store a campaign message as type 'campaign' in MongoDB"""
+    try:
+        session_id = await get_or_create_sms_session(user_id, brand)
+        
+        campaign_interaction = {
+            "type": "campaign",
+            "message": message,
+            "timestamp": datetime.utcnow(),
+            "channel": channel,
+            "brand": brand
+        }
+        
+        collection = get_brand_collection()
+        await collection.update_one(
+            {"_id": ObjectId(session_id)},
+            {
+                "$push": {"interactions": campaign_interaction},
+                "$set": {"last_updated": datetime.utcnow()}
+            }
+        )
+        
+        logger.info(f"Campaign message stored for user {user_id}, campaign {campaign_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error storing campaign message: {e}")
+        return False
+
 @app.get("/")
 async def root():
     return {"message": "SMS AI Chatbot Running"}
@@ -165,6 +193,14 @@ async def send_sms(sms_data: SMSRequest):
             body=plain_text,
             from_=brand_config["twilio_number"],
             to=sms_data.to,
+        )
+        
+        await store_campaign_message(
+            user_id=sms_data.to,
+            message=plain_text,
+            brand=sms_data.brand,
+            campaign_id=sms_data.campaignId,
+            contact_id=sms_data.contactId
         )
 
         await update_delivered_status(sms_data.campaignId, sms_data.contactId)
@@ -209,11 +245,3 @@ async def receive_sms(brand: str = Path(...), From: str = Form(...), Body: str =
 
     out_response.message(reply)
     return Response(content=str(out_response), media_type="application/xml")
-
-@app.get("/messages/{phone}/{brand}")
-async def get_messages(phone: str, brand: str):
-    collection = get_brand_collection()
-    sessions = await collection.find({"user_id": phone, "brand": brand}).sort("last_updated", -1).to_list(length=1)
-    if not sessions:
-        return {"success": True, "messages": []}
-    return {"success": True, "messages": sessions[0].get("interactions", [])}
