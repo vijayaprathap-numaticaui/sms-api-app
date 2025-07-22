@@ -18,6 +18,7 @@ from bson import ObjectId
 
 load_dotenv()
 
+# Logging Setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
