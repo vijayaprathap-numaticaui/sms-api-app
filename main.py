@@ -25,7 +25,8 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_ENABLED = os.getenv("TWILIO_ENABLED", "false").lower() == "true"
 DIRECTUS_URL = os.getenv("DIRECTUS_URL")
-DIRECTUS_ADMIN_TOKEN = os.getenv("DIRECTUS_ADMIN_TOKEN")
+# NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN = os.getenv("NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN")
+NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN = "eAy9ghX4KqILh45YXXBhgsHHrBILYsfA"
 MONGODB_URI = os.getenv("MONGODB_CONNECTION_STRING")
 # NEXTAUTH_SECRET = os.getenv("NEXTAUTH_SECRET")
 NEXTAUTH_SECRET = "f5ba7b348cfe199eb683c74d1b9f2f53"
@@ -131,7 +132,7 @@ async def update_delivered_status(campaign_id: str, contact_id: str):
         get_res = requests.get(
             f"{DIRECTUS_URL}/items/sms_campaign_sms_contact",
             params=params,
-            headers={"Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}"}
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
         )
         item = get_res.json().get("data", [{}])[0]
         item_id = item.get("id")
@@ -145,7 +146,7 @@ async def update_delivered_status(campaign_id: str, contact_id: str):
             f"{DIRECTUS_URL}/items/sms_campaign_sms_contact/{item_id}",
             json={"delivered_at": delivered_at_utc},
             headers={
-                "Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}",
+                "Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}",
                 "Content-Type": "application/json",
             },
         )
@@ -365,7 +366,7 @@ async def get_campaign_chat_sessions(
         response = requests.get(
             f"{DIRECTUS_URL}/items/sms_campaign_sms_contact",
             params=params,
-            headers={"Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}"}
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
         )
         
         if not response.ok:
@@ -435,7 +436,7 @@ async def get_no_campaign_chat_sessions(
         response = requests.get(
             f"{DIRECTUS_URL}/items/sms_campaign_sms_contact",
             params={"fields": "sms_contact_contact_id.contact_number"},
-            headers={"Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}"}
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
         )
 
         campaign_phone_numbers = []
@@ -583,7 +584,7 @@ async def get_campaigns(user_data = Depends(verify_jwt_token)):
         response = requests.get(
             f"{DIRECTUS_URL}/items/sms_campaign",
             params=params,
-            headers={"Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}"}
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
         )
 
         if not response.ok:
@@ -616,7 +617,7 @@ async def get_groups(user_data = Depends(verify_jwt_token)):
         response = requests.get(
             f"{DIRECTUS_URL}/items/sms_group",
             params=params,
-            headers={"Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}"}
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
         )
 
         if not response.ok:
@@ -644,7 +645,7 @@ async def get_managers(user_data = Depends(verify_jwt_token)):
         response = requests.get(
             f"{DIRECTUS_URL}/users",
             params=params,
-            headers={"Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}"}
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
         )
 
         if not response.ok:
@@ -662,7 +663,7 @@ async def get_managers(user_data = Depends(verify_jwt_token)):
                         "fields": "brand",
                         "limit": "1"
                     },
-                    headers={"Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}"}
+                    headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
                 )
 
                 brand = None
@@ -712,7 +713,7 @@ async def create_manager(
             f"{DIRECTUS_URL}/users",
             json=create_user_data,
             headers={
-                "Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}",
+                "Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}",
                 "Content-Type": "application/json"
             }
         )
@@ -733,7 +734,7 @@ async def create_manager(
                         "filter": f'{{"user_id":{{"_eq":"{new_user["id"]}"}}}}',
                         "limit": "1"
                     },
-                    headers={"Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}"}
+                    headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
                 )
 
                 if existing_response.ok:
@@ -749,7 +750,7 @@ async def create_manager(
                                 "brand": manager_data.brand
                             },
                             headers={
-                                "Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}",
+                                "Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}",
                                 "Content-Type": "application/json"
                             }
                         )
@@ -765,7 +766,7 @@ async def create_manager(
                                 "brand": manager_data.brand
                             },
                             headers={
-                                "Authorization": f"Bearer {DIRECTUS_ADMIN_TOKEN}",
+                                "Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}",
                                 "Content-Type": "application/json"
                             }
                         )
