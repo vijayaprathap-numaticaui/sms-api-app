@@ -101,12 +101,6 @@ def format_for_sms(html: str) -> str:
 def get_brand_collection():
     return db["sms_chat_sessions"]
 
-import jwt
-from jwt import InvalidTokenError
-from fastapi import Header, HTTPException
-import os
-import re
-
 def verify_jwt_token(authorization: str = Header(None)):
     """Verify JWT token from Authorization header using NEXTAUTH_SECRET"""
     if not authorization or not authorization.startswith("Bearer "):
@@ -116,7 +110,7 @@ def verify_jwt_token(authorization: str = Header(None)):
     try:
         payload = jwt.decode(token, NEXTAUTH_SECRET, algorithms=["HS256"])
         return payload
-    except InvalidTokenError:
+    except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 def normalize_phone_number(phone: str) -> str:
