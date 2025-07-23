@@ -118,7 +118,7 @@ def verify_jwt_token(authorization: str = Header(None)):
     try:
         payload = jwt.decode(token, NEXTAUTH_SECRET, algorithms=["HS256"])
         return payload
-except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 def normalize_phone_number(phone: str) -> str:
