@@ -15,6 +15,8 @@ from twilio.rest import Client
 from twilio.twiml.messaging_response import MessagingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+from fastapi.responses import JSONResponse
+
 
 load_dotenv()
 
@@ -30,6 +32,8 @@ NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN = "eAy9ghX4KqILh45YXXBhgsHHrBILYsfA"
 MONGODB_URI = os.getenv("MONGODB_CONNECTION_STRING")
 # NEXTAUTH_SECRET = os.getenv("NEXTAUTH_SECRET")
 NEXTAUTH_SECRET = "f5ba7b348cfe199eb683c74d1b9f2f53"
+# NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID = os.getenv("NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID")
+NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID="2691d70b-3728-42b4-b5c1-de1973636adc"
 
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
@@ -59,6 +63,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 class SMSRequest(BaseModel):
     to: str
@@ -147,7 +155,6 @@ async def update_delivered_status(campaign_id: str, contact_id: str):
 
         if not patch_res.ok:
             raise Exception(f"Directus update failed: {patch_res.text}")
-        logger.info(f"Delivered_at updated: {delivered_at_utc}")
     except Exception as e:
         logger.error(f"Error updating Directus: {e}")
 
@@ -211,11 +218,28 @@ async def store_campaign_message(user_id: str, message: str, brand: str, campaig
             }
         )
         
-        logger.info(f"Campaign message stored for user {user_id}, campaign {campaign_id}")
         return True
     except Exception as e:
         logger.error(f"Error storing campaign message: {e}")
         return False
+    
+async def get_brand_for_user(user_id: str) -> Optional[str]:
+    try:
+        response = requests.get(
+            f"{DIRECTUS_URL}/items/sms_user",
+            params={"filter": f'{{"user_id":{{"_eq":"{user_id}"}}}}', "limit": 1},
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+        )
+
+        if response.ok:
+            user_data = response.json().get("data", [])
+            if user_data:
+                return user_data[0].get("brand")
+    except Exception as e:
+        logger.error(f"Error fetching brand for user {user_id}: {e}")
+
+    return None
+
 
 @app.get("/")
 async def root():
@@ -299,7 +323,7 @@ async def get_chat_sessions(
     """Get all chat sessions with brand filtering"""
     try:
         user_brand = user_data.get("brand")
-        is_admin = user_data.get("role") == os.getenv("NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID")
+        is_admin = user_data.get("role") == NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID
         
         if not user_brand and not is_admin:
             raise HTTPException(status_code=400, detail="User brand not found")
@@ -348,7 +372,7 @@ async def get_campaign_chat_sessions(
     """Get chat sessions for specific campaign"""
     try:
         user_brand = user_data.get("brand")
-        is_admin = user_data.get("role") == os.getenv("NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID")
+        is_admin = user_data.get("role") == NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID
         
         if not user_brand and not is_admin:
             raise HTTPException(status_code=400, detail="User brand not found")
@@ -422,7 +446,7 @@ async def get_no_campaign_chat_sessions(
     """Get chat sessions not associated with any campaign"""
     try:
         user_brand = user_data.get("brand")
-        is_admin = user_data.get("role") == os.getenv("NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID")
+        is_admin = user_data.get("role") == NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID
 
         if not user_brand and not is_admin:
             raise HTTPException(status_code=400, detail="User brand not found")
@@ -485,7 +509,7 @@ async def get_chat_session(
     """Get specific chat session by ID"""
     try:
         user_brand = user_data.get("brand")
-        is_admin = user_data.get("role") == os.getenv("NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID")
+        is_admin = user_data.get("role") == NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID
 
         if not user_brand and not is_admin:
             raise HTTPException(status_code=400, detail="User brand not found")
@@ -526,7 +550,7 @@ async def get_chat_session_by_phone(
     """Get chat session by phone number"""
     try:
         user_brand = user_data.get("brand")
-        is_admin = user_data.get("role") == os.getenv("NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID")
+        is_admin = user_data.get("role") == NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID
 
         if not user_brand and not is_admin:
             raise HTTPException(status_code=400, detail="User brand not found")
@@ -561,7 +585,7 @@ async def get_chat_session_by_phone(
 async def get_campaigns(user_data = Depends(verify_jwt_token)):
     """Get campaigns for user"""
     try:
-        is_admin = user_data.get("role") == os.getenv("NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID")
+        is_admin = user_data.get("role") == NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID
         user_id = user_data.get("smsUserId")
 
         if not is_admin and not user_id:
@@ -571,56 +595,69 @@ async def get_campaigns(user_data = Depends(verify_jwt_token)):
             params = {"sort": "-date_created"}
         else:
             params = {
-                "filter": f'{{"user_id":{{"id":{{"_eq":"{user_id}"}}}}}}',
+                "filter": f'{{"user_id":{{"_eq":"{user_id}"}}}}',
                 "sort": "-date_created"
             }
 
+        directus_url = f"{DIRECTUS_URL}/items/sms_campaign"
+
         response = requests.get(
-            f"{DIRECTUS_URL}/items/sms_campaign",
+            directus_url,
             params=params,
             headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
         )
 
         if not response.ok:
+            logger.error(f"Failed to fetch campaigns: {response.text}")
             raise HTTPException(status_code=500, detail="Failed to fetch campaigns")
 
         campaigns = response.json().get("data", [])
+        
         return CampaignsResponse(campaigns=campaigns)
     except Exception as e:
         logger.error(f"Error fetching campaigns: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/groups", response_model=GroupsResponse)
 async def get_groups(user_data = Depends(verify_jwt_token)):
     """Get groups for user"""
     try:
-        is_admin = user_data.get("role") == os.getenv("NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID")
+        is_admin = user_data.get("role") == NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID
         user_id = user_data.get("smsUserId")
 
         if not is_admin and not user_id:
+            logger.error("SMS user profile not found and not admin")
             raise HTTPException(status_code=400, detail="SMS user profile not found")
 
         if is_admin:
             params = {"sort": "-date_created"}
         else:
             params = {
-                "filter": f'{{"user_id":{{"id":{{"_eq":"{user_id}"}}}}}}',
+                "filter": f'{{"user_id":{{"_eq":"{user_id}"}}}}',
                 "sort": "-date_created"
             }
 
+        directus_url = f"{DIRECTUS_URL}/items/sms_group"
+
         response = requests.get(
-            f"{DIRECTUS_URL}/items/sms_group",
+            directus_url,
             params=params,
             headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
         )
 
         if not response.ok:
+            logger.error(f"Failed to fetch groups: {response.text}")
             raise HTTPException(status_code=500, detail="Failed to fetch groups")
 
         groups = response.json().get("data", [])
+        
         return GroupsResponse(groups=groups)
     except Exception as e:
         logger.error(f"Error fetching groups: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/admin/managers", response_model=ManagersResponse)
@@ -779,3 +816,59 @@ async def create_manager(
     except Exception as e:
         logger.error(f"Error creating manager: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/api/auth/login")
+async def login_user(login_data: LoginRequest):
+    try:
+        email = login_data.email
+        password = login_data.password
+        
+        response = requests.post(
+            f"{DIRECTUS_URL}/auth/login",
+            json={"email": email, "password": password},
+            headers={"Content-Type": "application/json"}
+        )
+
+        if not response.ok:
+            logger.error(f"Directus login failed: {response.text}")
+            return JSONResponse(content=response.json(), status_code=response.status_code)
+
+        data = response.json()
+        
+        access_token = data.get("access_token") or data.get("token") or data.get("data", {}).get("access_token")
+               
+        if not access_token:
+            logger.error(f"No token found. Full response: {data}")
+            return JSONResponse(
+                content={
+                    "error": "No token received from Directus", 
+                    "response": data,
+                    "available_keys": list(data.keys())
+                }, 
+                status_code=400
+            )
+
+        decoded = jwt.decode(access_token, options={"verify_signature": False})
+        user_id = decoded.get("id")
+        role = decoded.get("role")
+
+        custom_token = jwt.encode(
+            {
+                "id": user_id,
+                "role": role,
+                "brand": await get_brand_for_user(user_id),
+                "smsUserId": user_id,
+                "exp": datetime.utcnow().timestamp() + 60 * 60 * 24
+            },
+            NEXTAUTH_SECRET,
+            algorithm="HS256"
+        )
+
+        return {"token": custom_token}
+    
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
