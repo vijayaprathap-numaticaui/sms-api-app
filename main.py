@@ -92,6 +92,11 @@ class CreateManagerRequest(BaseModel):
     last_name: str
     brand: str
 
+class SetPasswordRequest(BaseModel):
+    email: str
+    oldPassword: str
+    newPassword: str
+
 def format_for_sms(html: str) -> str:
     text = re.sub(r"<p>(?:&nbsp;|\s| )*</p>", "\n", html)
     text = re.sub(r"<p[^>]*>", "", text)
@@ -649,7 +654,7 @@ async def get_groups(user_data = Depends(verify_jwt_token)):
             raise HTTPException(status_code=500, detail="Failed to fetch groups")
 
         groups = response.json().get("data", [])
-        
+
         return GroupsResponse(groups=groups)
     except Exception as e:
         logger.error(f"Error fetching groups: {e}")
@@ -814,6 +819,129 @@ async def create_manager(
         logger.error(f"Error creating manager: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@app.put("/api/admin/managers/{manager_id}")
+async def update_manager(
+    manager_id: str,
+    manager_data: dict,
+    user_data = Depends(verify_jwt_token)
+):
+    """Update a manager"""
+    try:
+        user_role = user_data.get("role")
+        if user_role != NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        first_name = manager_data.get("first_name")
+        last_name = manager_data.get("last_name")
+
+        if not first_name or not last_name:
+            raise HTTPException(status_code=400, detail="First and last name are required")
+
+        update_data = {
+            "first_name": first_name,
+            "last_name": last_name
+        }
+
+        response = requests.patch(
+            f"{DIRECTUS_URL}/users/{manager_id}",
+            json=update_data,
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+        )
+
+        if response.status_code != 200:
+            logger.error(f"Failed to update manager: {response.text}")
+            raise HTTPException(status_code=500, detail="Failed to update manager")
+
+        return response.json()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating manager: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.delete("/api/admin/managers/{manager_id}")
+async def delete_manager(
+    manager_id: str,
+    user_data = Depends(verify_jwt_token)
+):
+    """Delete a manager"""
+    try:
+        user_role = user_data.get("role")
+        if user_role != NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        response = requests.delete(
+            f"{DIRECTUS_URL}/users/{manager_id}",
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+        )
+
+        if response.status_code not in [200, 204]:
+            logger.error(f"Failed to delete manager: {response.text}")
+            raise HTTPException(status_code=500, detail="Failed to delete manager")
+
+        return {"message": "Manager deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting manager: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/api/admin/managers")
+async def get_managers(user_data = Depends(verify_jwt_token)):
+    """Get all managers for admin dashboard"""
+    try:
+        user_role = user_data.get("role")
+        if user_role != NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID:
+            return []
+
+        response = requests.get(
+            f"{DIRECTUS_URL}/users",
+            params={
+                "filter": f'{{"role":{{"_neq":"{NEXT_PUBLIC_BUSINESS_ADMIN_ROLE_ID}"}}}}',
+                "fields": "id,email,first_name,last_name,status"
+            },
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+        )
+
+        if not response.ok:
+            logger.error(f"Failed to fetch managers: {response.text}")
+            raise HTTPException(status_code=500, detail="Failed to fetch managers")
+
+        users_data = response.json().get("data", [])
+
+        managers = []
+        for user in users_data:
+            sms_response = requests.get(
+                f"{DIRECTUS_URL}/items/sms_user",
+                params={"filter": f'{{"user_id":{{"_eq":"{user["id"]}"}}}}', "limit": 1},
+                headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+            )
+
+            brand = None
+            if sms_response.ok:
+                sms_data = sms_response.json().get("data", [])
+                if sms_data:
+                    brand = sms_data[0].get("brand")
+
+            managers.append({
+                "id": user["id"],
+                "email": user["email"],
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
+                "status": user.get("status", "active"),
+                "brand": brand
+            })
+
+        return managers
+
+    except Exception as e:
+        logger.error(f"Error fetching managers: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return []
+
 @app.post("/api/auth/login")
 async def login_user(login_data: LoginRequest):
     try:
@@ -848,13 +976,32 @@ async def login_user(login_data: LoginRequest):
         decoded = jwt.decode(access_token, options={"verify_signature": False})
         user_id = decoded.get("id")
         role = decoded.get("role")
+        user_email = decoded.get("email") or data.get("email") or login_data.email
+
+        sms_user_id = None
+        try:
+            sms_response = requests.get(
+                f"{DIRECTUS_URL}/items/sms_user",
+                params={"filter": f'{{"user_id":{{"_eq":"{user_id}"}}}}', "limit": 1},
+                headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+            )
+            if sms_response.ok:
+                sms_data = sms_response.json().get("data", [])
+                if sms_data:
+                    sms_user_id = sms_data[0].get("id")
+                    logger.info(f"SMS user profile during login: {sms_data[0]}")
+                else:
+                    logger.info("No SMS user profile found during login")
+        except Exception as e:
+            logger.error(f"Error fetching SMS user ID: {e}")
 
         custom_token = jwt.encode(
             {
                 "id": user_id,
+                "email": user_email,
                 "role": role,
                 "brand": await get_brand_for_user(user_id),
-                "smsUserId": user_id,
+                "smsUserId": sms_user_id,
                 "exp": datetime.utcnow().timestamp() + 60 * 60 * 24
             },
             NEXTAUTH_SECRET,
@@ -869,3 +1016,115 @@ async def login_user(login_data: LoginRequest):
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+@app.post("/api/auth/set-password")
+async def set_password(password_data: SetPasswordRequest):
+    """Set/change user password"""
+    try:
+        email = password_data.email
+        old_password = password_data.oldPassword
+        new_password = password_data.newPassword
+
+        login_response = requests.post(
+            f"{DIRECTUS_URL}/auth/login",
+            json={"email": email, "password": old_password},
+            headers={"Content-Type": "application/json"}
+        )
+
+        if not login_response.ok:
+            logger.error(f"Old password verification failed: {login_response.text}")
+            return JSONResponse(
+                content={"message": "Current password is incorrect"},
+                status_code=400
+            )
+
+        login_data = login_response.json()
+        access_token = login_data.get("access_token") or login_data.get("token") or login_data.get("data", {}).get("access_token")
+
+        if not access_token:
+            logger.error("No access token received during password verification")
+            return JSONResponse(
+                content={"message": "Authentication failed"},
+                status_code=400
+            )
+
+        decoded = jwt.decode(access_token, options={"verify_signature": False})
+        user_id = decoded.get("id")
+
+        if not user_id:
+            logger.error("No user ID found in token")
+            return JSONResponse(
+                content={"message": "User identification failed"},
+                status_code=400
+            )
+
+        try:
+            sms_check_response = requests.get(
+                f"{DIRECTUS_URL}/items/sms_user",
+                params={"filter": f'{{"user_id":{{"_eq":"{user_id}"}}}}', "limit": 1},
+                headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+            )
+            if sms_check_response.ok:
+                sms_data = sms_check_response.json().get("data", [])
+                if sms_data:
+                    logger.info(f"SMS user profile BEFORE password change: {sms_data[0]}")
+                else:
+                    logger.info("No SMS user profile found before password change")
+        except Exception as e:
+            logger.error(f"Error checking SMS profile before password change: {e}")
+
+        current_user_response = requests.get(
+            f"{DIRECTUS_URL}/users/{user_id}",
+            headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+        )
+
+        current_user_data = {}
+        if current_user_response.ok:
+            current_user_data = current_user_response.json().get("data", {})
+
+        update_data = {
+            "password": new_password,
+            "first_name": current_user_data.get("first_name", ""),
+            "last_name": current_user_data.get("last_name", "")
+        }
+
+        update_response = requests.patch(
+            f"{DIRECTUS_URL}/users/{user_id}",
+            json=update_data,
+            headers={
+                "Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}",
+                "Content-Type": "application/json"
+            }
+        )
+
+        if not update_response.ok:
+            logger.error(f"Password update failed: {update_response.text}")
+            return JSONResponse(
+                content={"message": "Failed to update password"},
+                status_code=500
+            )
+
+        logger.info(f"Password update successful for user {user_id}")
+
+        try:
+            sms_check_response_after = requests.get(
+                f"{DIRECTUS_URL}/items/sms_user",
+                params={"filter": f'{{"user_id":{{"_eq":"{user_id}"}}}}', "limit": 1},
+                headers={"Authorization": f"Bearer {NEXT_PUBLIC_DIRECTUS_ADMIN_TOKEN}"}
+            )
+            if sms_check_response_after.ok:
+                sms_data_after = sms_check_response_after.json().get("data", [])
+                if sms_data_after:
+                    logger.info(f"SMS user profile AFTER password change: {sms_data_after[0]}")
+                else:
+                    logger.info("No SMS user profile found after password change")
+        except Exception as e:
+            logger.error(f"Error checking SMS profile after password change: {e}")
+
+        logger.info(f"=== PASSWORD CHANGE END for user {user_id} ===")
+
+        return {"message": "Password updated successfully"}
+
+    except Exception as e:
+        logger.error(f"Error during password update: {e}")
+        return JSONResponse(content={"message": "Internal server error"}, status_code=500)
